@@ -1,93 +1,27 @@
-import socket
-import threading
-import getpass
 import rsa
-public_key, private_key = rsa.newkeys(1024)
-public_partner = None
+import os
+import struct
+from Crypto.Cipher import AES
 
-choice = input("Do you want to host(1) or connect(2)? ")
+# Generate RSA keys
+def generate_rsa_keys():
+    return rsa.newkeys(2048)
 
-if choice == "1":
-    IP = getpass.getpass("What is your IP to bind to? ")
+def encrypt_message(message, key):
+    cipher = AES.new(key, AES.MODE_GCM)
+    ciphertext, tag = cipher.encrypt_and_digest(message.encode())
+    return cipher.nonce + tag + ciphertext
 
+def decrypt_message(encrypted_data, key):
     try:
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind((IP, 9999))
-        server.listen()
-        print(f"Server listening on {IP}:9999...")
+        nonce, tag, ciphertext = encrypted_data[:16], encrypted_data[16:32], encrypted_data[32:]
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        return cipher.decrypt_and_verify(ciphertext, tag).decode()
+    except:
+        return "[Decryption Error]"
 
-        client, addr = server.accept()
-        print(f"Accepted connection from {addr}")
-        
-        client.send(public_key.save_pkcs1("PEM"))
-        public_partner = rsa.PublicKey.load_pkcs1(client.recv(1024))
+def encrypt_aes_key(aes_key, public_partner):
+    return rsa.encrypt(aes_key, public_partner)
 
-    except socket.gaierror:
-        print(f"Invalid IP address: {IP}")
-        exit(1)
-    except OSError as e:
-        print(f"OS error occurred: {e}")
-        exit(1)
-    except Exception as e:
-        print(f"An unexpected error occurred while hosting: {e}")
-        exit(1)
-
-elif choice == "2":
-    IP = getpass.getpass("What IP do you want to connect to? ")
-
-    try: 
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect((IP, 9999))  
-        print(f"Connected to {IP}:9999")
-
-        public_partner = rsa.PublicKey.load_pkcs1(client.recv(1024))
-        client.send(public_key.save_pkcs1("PEM"))
-
-    except socket.gaierror:
-        print(f"Invalid IP address or hostname: {IP}")
-        exit(1)
-    except ConnectionRefusedError:
-        print(f"Connection refused by the server at {IP}:9999. Is it running?")
-        exit(1)
-    except socket.timeout:
-        print(f"Connection to {IP}:9999 timed out.")
-        exit(1)
-    except OSError as e:
-        print(f"OS error occurred: {e}")
-        exit(1)
-    except Exception as e:
-        print(f"An unexpected error occurred while connecting: {e}")
-        exit(1)
-else:
-    print("Invalid choice. Exiting.")
-    exit(0)
-
-def send_messages(c):
-    while True:
-        message = input("You: ")
-        if not message:
-            continue
-        try: 
-            encrypted = rsa.encrypt(message.encode(), public_partner)
-            c.send(encrypted)
-
-        except Exception as e:
-            print(f"Error sending message: {e}")
-            break
-
-def receive_messages(c):
-    while True:
-        data = c.recv(1024)
-        if not data:
-            print("Connection closed by peer.")
-            break
-            
-        decrypted = rsa.decrypt(data, private_key)
-        print("Partner:", decrypted.decode())
-        
-if choice == "1":
-    threading.Thread(target=send_messages, args=(client,)).start()
-    threading.Thread(target=receive_messages, args=(client,)).start()
-elif choice == "2":
-    threading.Thread(target=send_messages, args=(client,)).start()
-    threading.Thread(target=receive_messages, args=(client,)).start()
+def decrypt_aes_key(encrypted_aes_key, private_key):
+    return rsa.decrypt(encrypted_aes_key, private_key)
