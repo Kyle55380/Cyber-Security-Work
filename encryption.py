@@ -2,7 +2,6 @@ import socket
 import threading
 import getpass
 import rsa
-# 192.168.1.39
 public_key, private_key = rsa.newkeys(1024)
 public_partner = None
 
